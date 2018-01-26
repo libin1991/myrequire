@@ -1,4 +1,5 @@
-define(function(require,exports,module){
+define('common',[],function(require){
 	console.log('common')
-	var c = require('classnames')
+	var classnames = require('classnames')
+    return classnames
 })

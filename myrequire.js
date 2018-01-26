@@ -19,19 +19,29 @@ var requirejs, define;
         ModuleObj:{},
          // 记录一共加载了几个模块，每次script.load成功时减1，如果为0，执行require的callbakc
         totalLoad:0,
+        // 用来存放所有调用的require方法，记录deps和callback
+        reqs:[],
         // requirejs的回调函数
         callback:'',
         // requirejs的deps
         deps:[],
-        // 加载模块的方法，加载requirejs的deps和difine的deps，callback是给requirejs执行时用的，define方法调用时不需要callback,模块的func在 script.load方法里添加到context.ModuleObj上
+        // 加载模块的方法，加载requirejs的deps和difine的deps，callback是给requirejs执行时用的，define方法调用时不需要callback,模块的func在 script.load方法里添加到context.ModuleObj上。
+        // 如果deps对象，那么require下载的将是deps里的模块，也就是说
         require:function(deps, callback, errorback){
+            console.log('%c进入context的require方法，本次加载的模块是'+deps,'color:purple;')
             if(callback) {
-                context.callback = callback
-                context.deps = deps
+                let reqObj = {
+                    callback,
+                    deps
+                }
+                context.reqs.push(reqObj)
+                // context.callback = callback
+                // context.deps = deps
             }
 
             // 如果deps是数组，认为是调用requirejs或define的地方
             if(isArray(deps)) {
+                // console.log('%c进入context的require方法，本次加载的模块是'+deps,'color:purple;')
                 deps.map(function(moduleName, index){
                     var config = this.config;
                     var temPath = this.handlePath(config.paths[moduleName]);
@@ -66,10 +76,12 @@ var requirejs, define;
             }
             // console.log(context.ModuleArr,123123)
 
-            
+
         },
         onScriptLoad:function(e){
             var moduleName = e.path[0].dataset.requiremodule
+            console.log(moduleName+'模块执行加载并执行完成，temModule的内容：',temModule)
+            // data-main的js加载进来的时候temModule是没有内容。temModule只有define执行的时候才会创建
             if(temModule) {
                 // 把模块的func加到context.ModuleObj上
                 temModule[0] = temModule[0] || moduleName
@@ -80,7 +92,7 @@ var requirejs, define;
                 // 完善ModuleArr对象
                 context.addFuncToArr(temModule)
                 // globalQueue.push(temModule)
-                log(temModule,'加载完成')
+                log('%c'+temModule[0]+'模块加载完成,正在执行load方法','color:#ff9800;')
                 temModule = null
 
                 // totalLoad为0时，说明模块都已加载，可以执行模块计算模块结果了,结果计算完毕后执行requirejs的callback
@@ -88,12 +100,13 @@ var requirejs, define;
                 if(context.totalLoad === 0) {
                     // console.log(context.ModuleObj)
                     context.loopDeps(context.ModuleObj);
-                    var resultArr = context.getDepResult(context.deps)
-                    context.callback.apply(null, resultArr)
-                }
-            } 
+                    context.reqs.map(item=>{
+                        var resultArr = context.getDepResult(item.deps)
+                        item.callback.apply(null, resultArr)
+                    })
 
-            
+                }
+            }
         },
         onScriptError:function(){
             console.log('load失败')
@@ -122,7 +135,7 @@ var requirejs, define;
                 }
             })
             return flag
-            
+
         },
         // 把各模块的func执行，赋给result,因为moduleArr已经确保了依赖最深的再数组最前面，所以func的依赖一定能获取到
         loopDeps:function(deps){
@@ -142,9 +155,14 @@ var requirejs, define;
                     var depsArr = obj[module.moduleName].deps.map(function(item, index){
                         return obj[item].result
                     })
-                    obj[module.moduleName].result = obj[module.moduleName].cb.apply(null,depsArr)
+                    let cb = obj[module.moduleName].cb
+                    if(isFunction(cb)) {
+                        obj[module.moduleName].result = obj[module.moduleName].cb.apply(null,depsArr)
+                    }else if(typeof cb === 'string'){
+                        obj[module.moduleName].result = eval(cb)
+                    }
+
                 }
-                
             })
             // console.log(this.ModuleObj)
         },
@@ -153,12 +171,17 @@ var requirejs, define;
             return (this.ModuleObj[moduleName] !== undefined)
         },
         handlePath:function(temPath){
+            if(temPath.substr(0,4) === 'http') {
+                return temPath
+            }
+
             // 如果路径首字符为/，则不拼接baseUrl
             return (temPath.charAt(0) === '/') ? temPath+'.js':this.config.baseUrl+'/'+temPath+'.js'
         }
     }
 
     req = requirejs = function(deps, callback, errorback){
+        console.log('%c调用了req方法','color:pink;')
         // 如果是字符串,默认是data-main入口文件
         if(typeof deps === 'string') {
             req.load(deps)
@@ -173,13 +196,14 @@ var requirejs, define;
         if (!isArray(deps) && typeof deps !== 'string') {
             context.config = deps
         }
-        
+
     }
 
     requirejs.config = function(config){
         req(config)
     }
 
+    // 根据路径将模块下载下来的方法
     req.load = function(path,moduleName){
         if(context.hasLoad(moduleName)) return
         var node = document.createElement('script');
@@ -199,16 +223,39 @@ var requirejs, define;
             func = deps;
             deps = name;
             name = null
-        }
-        if(isFunction(name)) {
+        }else if(isFunction(name)) {
             func = name
             deps = []
             name = null
+        }else if(name === 'common') {
+
+            let str = func.toString()
+            let arr = []
+            str.replace(/(?:^|[^\w\$_.])require\s*\(\s*["']([^"']*)["']\s*\)/g, function (_, id) {
+                arr.push([_.trim(),id])
+            });
+            arr.map(item=>{
+                // console.log(context)
+                let mname = item[1]
+                str = str.replace(item[0],`require['${mname}'].result`)
+            })
+            
+            deps = arr.map(item=>{return item[1]})
+            func = '('+str+')(context.ModuleObj)'
+
+            // deps = []
+            // func = function(){
+            //     console.log(111)
+            // }
+            // requirejs(['jquery'],function(jquery){
+            //     console.log(jquery,123123)
+            // })
+            // return
         }
 
         // 一定是当前模块执行完后，会执行当前模块的node.load方法，这是连在一起的，别的js插不进来，利用这点使把当前模块的 function插到context的Module对象上
         temModule = [name,deps,func]
-        log('开始加载',temModule)
+        log('进入define的方法->',temModule)
 
         if(deps.length === 0) return
 
@@ -257,5 +304,3 @@ var requirejs, define;
     }
     global.context = context
 })(window)
-
-

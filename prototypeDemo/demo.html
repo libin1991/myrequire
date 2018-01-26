@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <!-- 上述3个meta标签*必须*放在最前面，任何其他内容都*必须*跟随其后！ -->
+    <title>moban</title>
+
+    <!-- HTML5 shim and Respond.js for IE8 support of HTML5 elements and media queries -->
+    <!-- WARNING: Respond.js doesn't work if you view the page via file:// -->
+    <!--[if lt IE 9]>
+      <script src="https://cdn.bootcss.com/html5shiv/3.7.3/html5shiv.min.js"></script>
+      <script src="https://cdn.bootcss.com/respond.js/1.4.2/respond.min.js"></script>
+    <![endif]-->
+  </head>
+  <body>
+
+    <!-- jQuery (necessary for Bootstrap's JavaScript plugins) -->
+    <script type="text/javascript">
+
+    let id = 0
+
+    let paths = {
+        apple:'./apple.js',
+        orange:'./orange.js',
+        jquery:'https://cdn.bootcss.com/jquery/1.12.4/jquery.min.js',
+    }
+
+    // 存放所有注册require的模块，收集他们的依赖，以及回调
+    let reqs = {}
+
+    let modules = {}
+
+    function define(name, deps, callback){
+        modules[name].callback = callback
+        // modules[name].result = callback()
+
+        // 如果模块没有依赖，直接获取结果，如果有依赖，等到依赖加载完成时在执行结果
+        if(deps.length === 0) {
+            modules[name].result = callback()
+        }else{
+            // 如果有依赖，要先执行依赖
+            require(deps,function(){
+                modules[name].result = callback(...arguments)
+            })
+        }
+
+    }
+    define.amd = true
+
+    function require(name,callback) {
+
+        // 创建执行模块
+        reqs[id] = {
+            deps:name,
+            id,
+            callback,
+        }
+
+
+        for(let item of name) {
+            if(!modules[item]) {
+                var node = document.createElement('script');
+                node.type = 'text/javascript';
+                node.charset = 'utf-8';
+                node.setAttribute('data-requiremodule', item);
+                node.async = true;
+                document.body.appendChild(node)
+                node.addEventListener('load', loadComplete, false);
+                node.src = paths[item]
+
+                // 给依赖的模块创建模板，并监听
+                modules[item] = {
+                    // 存放依赖此模块的模块名
+                    watchers:[id],
+                    name:item,
+                }
+            }else{
+                modules[item].watchers.push(id)
+            }
+        }
+        id++
+    }
+
+    function loadComplete(evt){
+        var node = evt.currentTarget || evt.srcElement;
+        node.removeEventListener('load', loadComplete);
+
+        let name = node.getAttribute('data-requiremodule')
+        modules[name].watchers.map((item)=>{
+            if(reqs[item].finish) return
+            let completed = true
+            let args = []
+            reqs[item].deps.map(item2=>{
+                if(!modules[item2].result) {
+                    completed = false
+                }else{
+                    args.push(modules[item2].result)
+                }
+            })
+            if(completed) {
+                reqs[item].callback(...args)
+                reqs[item].finish = true
+                reqs[item].completed = true
+            }
+        })
+    }
+
+    var a = require(['apple','jquery'],function(apple,$){
+        console.log(apple,$('<div>123</div>'))
+    })
+    </script>
+
+  </body>
+</html>
