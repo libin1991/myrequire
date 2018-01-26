@@ -33,7 +33,7 @@
     let modules = {}
 
     function define(name, deps, callback){
-        modules[name].callback = callback
+        // modules[name].callback = callback
         // modules[name].result = callback()
 
         // 如果模块没有依赖，直接获取结果，如果有依赖，等到依赖加载完成时在执行结果
@@ -45,39 +45,38 @@
                 modules[name].result = callback(...arguments)
             })
         }
-
     }
     define.amd = true
 
-    function require(name,callback) {
+    function require(deps,callback) {
 
         // 创建执行模块
         reqs[id] = {
-            deps:name,
+            deps,
             id,
             callback,
         }
 
 
-        for(let item of name) {
-            if(!modules[item]) {
+        for(let name of deps) {
+            if(!modules[name]) {
                 var node = document.createElement('script');
                 node.type = 'text/javascript';
                 node.charset = 'utf-8';
-                node.setAttribute('data-requiremodule', item);
+                node.setAttribute('data-requiremodule', name);
                 node.async = true;
                 document.body.appendChild(node)
                 node.addEventListener('load', loadComplete, false);
-                node.src = paths[item]
+                node.src = paths[name]
 
                 // 给依赖的模块创建模板，并监听
-                modules[item] = {
+                modules[name] = {
                     // 存放依赖此模块的模块名
                     watchers:[id],
-                    name:item,
+                    name:name,
                 }
             }else{
-                modules[item].watchers.push(id)
+                modules[name].watchers.push(id)
             }
         }
         id++
@@ -108,7 +107,11 @@
     }
 
     var a = require(['apple','jquery'],function(apple,$){
-        console.log(apple,$('<div>123</div>'))
+        console.log(apple)
+        console.log($('<div>123</div>'))
+    })
+    var b = require(['orange'],function(orange){
+        console.log(orange)
     })
     </script>
 
